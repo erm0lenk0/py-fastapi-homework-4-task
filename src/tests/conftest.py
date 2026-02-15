@@ -177,7 +177,7 @@ async def jwt_manager() -> JWTAuthManagerInterface:
     )
 
 
-@pytest_asyncio.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function", autouse=True)
 async def seed_user_groups(db_session: AsyncSession):
     """
     Asynchronously seed the UserGroupModel table with default user groups.
@@ -191,7 +191,7 @@ async def seed_user_groups(db_session: AsyncSession):
     yield db_session
 
 
-@pytest_asyncio.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function", autouse=True)
 async def seed_database(db_session):
     """
     Seed the database with test data if it is empty.
@@ -209,3 +209,4 @@ async def seed_database(db_session):
         await seeder.seed()
 
     yield db_session
+

@@ -4,11 +4,15 @@ services:
       context: .
       dockerfile: ./docker/tests/Dockerfile
     container_name: backend_theater_test
-    command: [ "pytest", "-c", "/usr/src/config/pytest.ini",
-               "-m", "e2e", "--maxfail=5", "--disable-warnings", "-v", "--tb=short"]
+    command: >
+      sh -c "
+        alembic upgrade head &&
+        pytest -c /usr/src/config/pytest.ini -m e2e --maxfail=5 --disable-warnings -v --tb=short
+      "
     environment:
       - PYTHONPATH=/usr/src/fastapi
       - ENVIRONMENT=testing
+      - ALEMBIC_CONFIG=/usr/src/alembic/alembic.ini
       - EMAIL_HOST=mailhog_theater_test
       - EMAIL_PORT=1025
       - EMAIL_HOST_USER=testuser@mate.com
@@ -27,6 +31,7 @@ services:
         condition: service_healthy
     volumes:
       - ./src:/usr/src/fastapi
+      - ./alembic.ini:/usr/src/config/alembic.ini
     networks:
       - theater_network_test
 

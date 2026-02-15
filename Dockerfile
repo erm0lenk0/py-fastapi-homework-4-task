@@ -40,6 +40,8 @@ WORKDIR /usr/src/fastapi
 # Copy the source code
 COPY ./src .
 
+COPY ./alembic.ini /usr/src/fastapi/alembic.ini
+
 # Copy commands
 COPY ./commands /commands
 
