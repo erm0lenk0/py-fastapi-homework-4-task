@@ -71,7 +71,7 @@ router = APIRouter()
 async def register_user(
         user_data: UserRegistrationRequestSchema,
         background_tasks: BackgroundTasks,
-        db: AsyncSession = Depends(get_postgresql_db),
+        db: AsyncSession = Depends(get_db),
         email_sender: EmailSenderInterface = Depends(get_accounts_email_notificator)
 ) -> UserRegistrationResponseSchema:
     """
@@ -175,7 +175,7 @@ async def register_user(
 )
 async def activate_account(
         activation_data: UserActivationRequestSchema,
-        db: AsyncSession = Depends(get_postgresql_db),
+        db: AsyncSession = Depends(get_db),
 ) -> MessageResponseSchema:
     """
     Endpoint to activate a user's account.
@@ -246,7 +246,7 @@ async def activate_account(
 async def request_password_reset_token(
         data: PasswordResetRequestSchema,
         background_tasks: BackgroundTasks,
-        db: AsyncSession = Depends(get_postgresql_db),
+        db: AsyncSession = Depends(get_db),
         email_sender: EmailSenderInterface = Depends(get_accounts_email_notificator),
 ) -> MessageResponseSchema:
     """
@@ -334,7 +334,7 @@ async def request_password_reset_token(
 async def reset_password(
         data: PasswordResetCompleteRequestSchema,
         background_tasks: BackgroundTasks,
-        db: AsyncSession = Depends(get_postgresql_db),
+        db: AsyncSession = Depends(get_db),
         email_sender: EmailSenderInterface = Depends(get_accounts_email_notificator),
 
 ) -> MessageResponseSchema:
@@ -451,7 +451,7 @@ async def reset_password(
 )
 async def login_user(
         login_data: UserLoginRequestSchema,
-        db: AsyncSession = Depends(get_postgresql_db),
+        db: AsyncSession = Depends(get_db),
         settings: BaseAppSettings = Depends(get_settings),
         jwt_manager: JWTAuthManagerInterface = Depends(get_jwt_auth_manager),
 ) -> UserLoginResponseSchema:
@@ -558,7 +558,7 @@ async def login_user(
 )
 async def refresh_access_token(
         token_data: TokenRefreshRequestSchema,
-        db: AsyncSession = Depends(get_postgresql_db),
+        db: AsyncSession = Depends(get_db),
         jwt_manager: JWTAuthManagerInterface = Depends(get_jwt_auth_manager),
 ) -> TokenRefreshResponseSchema:
     """
