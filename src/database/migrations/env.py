@@ -1,10 +1,11 @@
 from logging.config import fileConfig
 
 from alembic import context
+from sqlalchemy import create_engine
 
+from config import get_settings
 from database.models import movies, accounts # noqa: F401
 from database.models.base import Base
-from database.session_postgresql import sync_postgresql_engine
 
 
 # this is the Alembic Config object, which provides
@@ -26,7 +27,10 @@ target_metadata = Base.metadata
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
+settings = get_settings()
+DATABASE_URL = settings.DATABASE_URL.replace("+aiosqlite", "")
 
+connectable = create_engine(DATABASE_URL)
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
@@ -40,18 +44,17 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    connectable = sync_postgresql_engine
 
-    with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-            compare_type=True,
-            compare_server_default=True
-        )
+    context.configure(
+        url=DATABASE_URL,
+        target_metadata=target_metadata,
+        literal_binds=True,
+        compare_type=True,
+        compare_server_default=True
+    )
 
-        with context.begin_transaction():
-            context.run_migrations()
+    with context.begin_transaction():
+        context.run_migrations()
 
 
 def run_migrations_online() -> None:
@@ -61,7 +64,6 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    connectable = sync_postgresql_engine
 
     with connectable.connect() as connection:
         context.configure(

@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from config.settings import Settings
 
 from database import get_db, ActivationTokenModel, UserGroupEnum
 from database.models.accounts import UserModel, UserProfileModel
+from exceptions import TokenExpiredError, InvalidTokenError
 from schemas.profiles import ProfileCreateSchema, ProfileResponseSchema
 from schemas.accounts import UserActivationRequestSchema, MessageResponseSchema
 from security.token_manager import JWTAuthManager
@@ -49,41 +49,17 @@ async def get_current_user(
             )
 
         return user
-    except Exception:
+
+    except TokenExpiredError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token"
+            detail="Token has expired."
         )
-
-@router.post("/profiles/", response_model=ProfileResponseSchema)
-async def create_profile(
-    profile: ProfileCreateSchema,
-    db: AsyncSession = Depends(get_db),
-    current_user: UserModel = Depends(get_current_user),
-):
-    stmt = select(UserProfileModel).where(UserProfileModel.user_id == current_user.id)
-    result = await db.execute(stmt)
-    existing_profile = result.scalars().first()
-    if existing_profile:
+    except InvalidTokenError:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Profile already exists."
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token."
         )
-
-    new_profile = UserProfileModel(
-        user_id=current_user.id,
-        first_name=profile.first_name,
-        last_name=profile.last_name,
-        gender=profile.gender,
-        date_of_birth=profile.date_of_birth,
-        info=profile.info,
-    )
-    db.add(new_profile)
-    await db.commit()
-    await db.refresh(new_profile)
-
-    return new_profile
-
 
 
 @router.post("/users/{user_id}/profile/",
@@ -98,10 +74,20 @@ async def create_user_profile(
         current_user: UserModel = Depends(get_current_user),
         s3_client: S3StorageInterface = Depends(get_s3_storage_client),
 ):
+    stmt = select(UserModel).where(UserModel.id == user_id)
+    result = await db.execute(stmt)
+    user = result.scalars().first()
+
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found or not active."
+        )
+
     if current_user.id != user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authenticated to create profile for another user."
+            detail="You don't have permission to edit this profile."
         )
 
     stmt = select(UserProfileModel).where(UserProfileModel.user_id == user_id)
@@ -117,8 +103,15 @@ async def create_user_profile(
     if avatar:
         validate_image(avatar)
         avatar_key = f"avatars/{user_id}_avatar.jpg"
-        await s3_client.upload_fileobj(avatar.file, avatar_key)
-        avatar_url = await s3_client.get_file_url(avatar_key)
+        try:
+            await s3_client.upload_fileobj(avatar.file, avatar_key)
+            avatar_url = await s3_client.get_file_url(avatar_key)
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to upload avatar. Please try again later."
+            )
+
 
     new_profile = UserProfileModel(
         user_id=user_id,
@@ -134,40 +127,3 @@ async def create_user_profile(
     await db.refresh(new_profile)
 
     return new_profile
-
-
-@router.post(
-    "/accounts/activate/",
-    response_model=MessageResponseSchema,
-    status_code=status.HTTP_200_OK,
-)
-async def activate_account(
-        data: UserActivationRequestSchema,
-        background_tasks: BackgroundTasks,
-        db: AsyncSession = Depends(get_db),
-        email_sender: EmailSenderInterface = Depends(get_accounts_email_notificator),
-):
-    stmt = (
-        select(ActivationTokenModel)
-        .join(UserModel)
-        .where(UserModel.email == data.email, ActivationTokenModel.token == data.token)
-    )
-    result = await db.execute(stmt)
-    activation_token = result.scalars().first()
-    if not activation_token:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Invalid or expired activation token."
-        )
-
-    user = activation_token.user
-    user.is_active = True
-    await db.commit()
-
-    background_tasks.add_task(
-        email_sender.send_activation_complete_email,
-        email=user.email,
-        login_link="https://example.com/login",
-    )
-
-    return {"message": "User account activated successfully."}

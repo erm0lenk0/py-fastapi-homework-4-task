@@ -48,29 +48,13 @@ class Settings(BaseAppSettings):
     JWT_SIGNING_ALGORITHM: str = os.getenv("JWT_SIGNING_ALGORITHM", "HS256")
 
 
-# class TestingSettings(BaseAppSettings):
-#     SECRET_KEY_ACCESS: str = "SECRET_KEY_ACCESS"
-#     SECRET_KEY_REFRESH: str = "SECRET_KEY_REFRESH"
-#     JWT_SIGNING_ALGORITHM: str = "HS256"
-#
-#     def model_post_init(self, __context: dict[str, Any] | None = None) -> None:
-#         object.__setattr__(self, 'PATH_TO_DB', ":memory:")
-#         object.__setattr__(
-#             self,
-#             'PATH_TO_MOVIES_CSV',
-#             str(self.BASE_DIR / "database" / "seed_data" / "test_data.csv")
-#         )
 
 class TestingSettings(BaseAppSettings):
     SECRET_KEY_ACCESS: str = "SECRET_KEY_ACCESS"
     SECRET_KEY_REFRESH: str = "SECRET_KEY_REFRESH"
     JWT_SIGNING_ALGORITHM: str = "HS256"
 
-    POSTGRES_USER: str = "admin"
-    POSTGRES_PASSWORD: str = "some_password"
-    POSTGRES_HOST: str = "postgres_theater"
-    POSTGRES_DB_PORT: int = 5432
-    POSTGRES_DB: str = "movies_db"
+    DATABASE_URL: str = "sqlite+aiosqlite:///./test.db"
 
     def model_post_init(self, __context: dict[str, Any] | None = None) -> None:
         object.__setattr__(self, 'PATH_TO_DB', ":memory:")
@@ -79,3 +63,9 @@ class TestingSettings(BaseAppSettings):
             'PATH_TO_MOVIES_CSV',
             str(self.BASE_DIR / "database" / "seed_data" / "test_data.csv")
         )
+
+environment = os.getenv('ENVIRONMENT', 'developing')
+if environment == 'testing':
+    settings = TestingSettings()
+else:
+    settings = Settings()

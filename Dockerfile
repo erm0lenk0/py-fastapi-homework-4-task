@@ -32,15 +32,13 @@ WORKDIR /usr/src/poetry
 
 # Install dependencies with Poetry
 RUN poetry lock
-RUN poetry install --no-root --only main
+RUN poetry install --no-root
 
 # Selecting a working directory
 WORKDIR /usr/src/fastapi
 
 # Copy the source code
 COPY ./src .
-
-COPY ./alembic.ini /usr/src/fastapi/alembic.ini
 
 # Copy commands
 COPY ./commands /commands

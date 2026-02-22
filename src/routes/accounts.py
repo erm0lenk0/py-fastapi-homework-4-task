@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from typing import cast
 
 from fastapi import APIRouter, Depends, status, HTTPException, BackgroundTasks
+
 from sqlalchemy import select, delete
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,9 +33,7 @@ from schemas import (
     TokenRefreshResponseSchema
 )
 from security.interfaces import JWTAuthManagerInterface
-
-from database.session_postgresql import get_postgresql_db
-from notifications.emails import EmailSender
+background = "#282a36"
 
 router = APIRouter()
 
@@ -106,10 +105,10 @@ async def register_user(
     result = await db.execute(stmt)
     user_group = result.scalars().first()
     if not user_group:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Default user group not found."
-        )
+        user_group = UserGroupModel(name=UserGroupEnum.USER)
+        db.add(user_group)
+        await db.commit()
+        await db.refresh(user_group)
 
     try:
         new_user = UserModel.create(
@@ -175,7 +174,9 @@ async def register_user(
 )
 async def activate_account(
         activation_data: UserActivationRequestSchema,
+        background_tasks: BackgroundTasks,
         db: AsyncSession = Depends(get_db),
+        email_sender: EmailSenderInterface = Depends(get_accounts_email_notificator),
 ) -> MessageResponseSchema:
     """
     Endpoint to activate a user's account.
@@ -229,6 +230,17 @@ async def activate_account(
     user.is_active = True
     await db.delete(token_record)
     await db.commit()
+
+    background_tasks.add_task(
+        email_sender.send_activation_email,
+        email=user.email,
+        login_link="https://example.com/login"
+    )
+
+    background_tasks.add_task(
+        email_sender.send_activation_complete_email,
+        email=user.email
+    )
 
     return MessageResponseSchema(message="User account activated successfully.")
 
