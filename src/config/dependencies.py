@@ -7,7 +7,6 @@ from notifications import EmailSenderInterface, EmailSender
 from security.interfaces import JWTAuthManagerInterface
 from security.token_manager import JWTAuthManager
 from storages import S3StorageInterface, S3StorageClient
-from config.settings import settings
 
 
 def get_settings() -> BaseAppSettings:

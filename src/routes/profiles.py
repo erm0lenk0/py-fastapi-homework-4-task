@@ -1,41 +1,58 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, BackgroundTasks
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    status,
+    UploadFile,
+    File,
+    Request,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from io import BytesIO
 
-from database import get_db, ActivationTokenModel, UserGroupEnum
+from config import get_jwt_auth_manager
+from database import get_db
 from database.models.accounts import UserModel, UserProfileModel
 from exceptions import TokenExpiredError, InvalidTokenError
 from schemas.profiles import ProfileCreateSchema, ProfileResponseSchema
-from schemas.accounts import UserActivationRequestSchema, MessageResponseSchema
 from security.token_manager import JWTAuthManager
 from storages.interfaces import S3StorageInterface
-from config.dependencies import get_s3_storage_client, get_accounts_email_notificator
-from validation.profile import validate_image
-from notifications.interfaces import EmailSenderInterface
+from config.dependencies import get_s3_storage_client
+from validation.profile import validate_image, validate_gender, validate_birth_date, validate_name
 from fastapi.security import OAuth2PasswordBearer
-import os
+
 
 router = APIRouter()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/accounts/login/")
 
-token_manager = JWTAuthManager(
-    secret_key_access=os.getenv("SECRET_KEY_ACCESS", "default_access_secret"),
-    secret_key_refresh=os.getenv("SECRET_KEY_REFRESH", "default_refresh_secret"),
-    algorithm=os.getenv("JWT_SIGNING_ALGORITHM", "HS256"),
-)
+async def get_token_from_header(request: Request) -> str:
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header is missing",
+        )
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Authorization header format. Expected 'Bearer <token>'",
+        )
+    return auth_header.split(" ", 1)[1]
 
 async def get_current_user(
-        token: str = Depends(oauth2_scheme),
+        token: str = Depends(get_token_from_header),
         db: AsyncSession = Depends(get_db),
+        jwt_manager: JWTAuthManager = Depends(get_jwt_auth_manager),
 ) -> UserModel:
     try:
-        payload = token_manager.decode_access_token(token)
-        user_id = payload.get("sub")
+        payload = jwt_manager.decode_access_token(token)
+        user_id = payload.get("user_id")
         if not user_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token: missing subject"
+                detail="Invalid token: missing user_id"
             )
 
         stmt = select(UserModel).where(UserModel.id == user_id)
@@ -68,8 +85,8 @@ async def get_current_user(
              )
 async def create_user_profile(
         user_id: int,
-        profile_data: ProfileCreateSchema = Depends(),
-        avatar: UploadFile | None = None,
+        profile_data: ProfileCreateSchema = Depends(ProfileCreateSchema.as_form),
+        avatar: UploadFile | None = File(None),
         db: AsyncSession = Depends(get_db),
         current_user: UserModel = Depends(get_current_user),
         s3_client: S3StorageInterface = Depends(get_s3_storage_client),
@@ -80,11 +97,11 @@ async def create_user_profile(
 
     if not user or not user.is_active:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found or not active."
         )
 
-    if current_user.id != user_id:
+    if current_user.id != user_id and current_user.group_id != 3:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You don't have permission to edit this profile."
@@ -96,15 +113,63 @@ async def create_user_profile(
     if existing_profile:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Profile already exists."
+            detail="User already has a profile."
+        )
+
+    try:
+        validate_name(profile_data.first_name)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"{profile_data.first_name} contains non-english letters."
+        )
+
+    try:
+        validate_name(profile_data.last_name)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"{profile_data.last_name} contains non-english letters."
+        )
+
+
+    try:
+        validate_birth_date(profile_data.date_of_birth)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e)
+        )
+
+    try:
+        validate_gender(profile_data.gender)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e)
+        )
+
+    if not profile_data.info.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Info field cannot be empty or contain only spaces."
         )
 
     avatar_url = None
+    avatar_key = None
     if avatar:
-        validate_image(avatar)
+        try:
+            validate_image(avatar)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(e)
+            )
+
         avatar_key = f"avatars/{user_id}_avatar.jpg"
         try:
-            await s3_client.upload_fileobj(avatar.file, avatar_key)
+            content = await avatar.read()
+            await s3_client.upload_file(avatar_key, content)
             avatar_url = await s3_client.get_file_url(avatar_key)
         except Exception:
             raise HTTPException(
@@ -115,15 +180,26 @@ async def create_user_profile(
 
     new_profile = UserProfileModel(
         user_id=user_id,
-        first_name=profile_data.first_name,
-        last_name=profile_data.last_name,
+        first_name=profile_data.first_name.lower(),
+        last_name=profile_data.last_name.lower(),
         gender=profile_data.gender,
         date_of_birth=profile_data.date_of_birth,
         info=profile_data.info,
-        avatar=avatar_url,
+        avatar=avatar_key,
     )
     db.add(new_profile)
     await db.commit()
     await db.refresh(new_profile)
 
-    return new_profile
+    response = ProfileResponseSchema(
+        id=new_profile.id,
+        user_id=new_profile.user_id,
+        first_name=new_profile.first_name,
+        last_name=new_profile.last_name,
+        gender=new_profile.gender,
+        date_of_birth=new_profile.date_of_birth,
+        info=new_profile.info,
+        avatar=avatar_url,
+    )
+
+    return response

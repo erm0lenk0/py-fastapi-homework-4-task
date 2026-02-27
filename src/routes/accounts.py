@@ -33,7 +33,6 @@ from schemas import (
     TokenRefreshResponseSchema
 )
 from security.interfaces import JWTAuthManagerInterface
-background = "#282a36"
 
 router = APIRouter()
 
@@ -124,7 +123,7 @@ async def register_user(
 
         await db.commit()
         await db.refresh(new_user)
-        activation_link = f"http://127.0.0.1/accounts/activate/?token={activation_token.token}&email={user_data.email}"
+        activation_link = f"http://127.0.0.1/api/v1/accounts/activate/?token={activation_token.token}&email={user_data.email}"
 
         background_tasks.add_task(
             email_sender.send_activation_email,
@@ -230,16 +229,13 @@ async def activate_account(
     user.is_active = True
     await db.delete(token_record)
     await db.commit()
+    await db.refresh(user)
 
-    background_tasks.add_task(
-        email_sender.send_activation_email,
-        email=user.email,
-        login_link="https://example.com/login"
-    )
-
+    login_link = "http://127.0.0.1/login/"
     background_tasks.add_task(
         email_sender.send_activation_complete_email,
-        email=user.email
+        user.email,
+        login_link
     )
 
     return MessageResponseSchema(message="User account activated successfully.")

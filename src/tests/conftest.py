@@ -1,6 +1,6 @@
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
-from sqlalchemy import insert
+from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings, get_accounts_email_notificator, get_s3_storage_client
@@ -8,7 +8,7 @@ from database import (
     reset_database,
     get_db_contextmanager,
     UserGroupEnum,
-    UserGroupModel
+    UserGroupModel, UserModel, ActivationTokenModel
 )
 from database.populate import CSVDatabaseSeeder
 from main import app
@@ -47,7 +47,7 @@ async def reset_db(request):
         yield
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture(scope="session", autouse=True)
 async def reset_db_once_for_e2e(request):
     """
     Reset the database once for end-to-end tests.
@@ -56,6 +56,7 @@ async def reset_db_once_for_e2e(request):
     ensuring the database is reset before running E2E tests.
     """
     await reset_database()
+    yield
 
 
 @pytest_asyncio.fixture(scope="session")
@@ -185,10 +186,19 @@ async def seed_user_groups(db_session: AsyncSession):
     This fixture inserts all user groups defined in UserGroupEnum into the database and commits the transaction.
     It then yields the asynchronous database session for further testing.
     """
-    groups = [{"name": group.value} for group in UserGroupEnum]
-    await db_session.execute(insert(UserGroupModel).values(groups))
+    groups = [
+        {"name": "USER"},
+        {"name": "ADMIN"},
+    ]
+
+    for group in groups:
+        existing = await db_session.execute(
+            select(UserGroupModel).where(UserGroupModel.name == group["name"])
+        )
+        if not existing.scalars().first():
+            await db_session.execute(insert(UserGroupModel).values(group))
+
     await db_session.commit()
-    yield db_session
 
 
 @pytest_asyncio.fixture(scope="function", autouse=True)
@@ -209,4 +219,42 @@ async def seed_database(db_session):
         await seeder.seed()
 
     yield db_session
+
+
+# @pytest_asyncio.fixture(scope="session", autouse=True)
+# async def seed_test_user(e2e_db_session: AsyncSession):
+#     # гарантируем наличие групп
+#     for group_name in ["USER", "ADMIN"]:
+#         result = await e2e_db_session.execute(
+#             select(UserGroupModel).where(UserGroupModel.name == group_name)
+#         )
+#         if not result.scalars().first():
+#             e2e_db_session.add(UserGroupModel(name=group_name))
+#     await e2e_db_session.commit()
+#
+#     # создаём пользователя
+#     result = await e2e_db_session.execute(
+#         select(UserModel).where(UserModel.email == "test@mate.com")
+#     )
+#     user = result.scalars().first()
+#
+#     if not user:
+#         result_group = await e2e_db_session.execute(
+#             select(UserGroupModel).where(UserGroupModel.name == UserGroupEnum.USER)
+#         )
+#         user_group = result_group.scalars().first()
+#
+#         user = UserModel.create(
+#             email="test@mate.com",
+#             raw_password="StrongPassword123!",
+#             group_id=user_group.id,
+#         )
+#         e2e_db_session.add(user)
+#         await e2e_db_session.flush()
+#
+#         token = ActivationTokenModel(user_id=user.id)
+#         e2e_db_session.add(token)
+#
+#         await e2e_db_session.commit()
+
 

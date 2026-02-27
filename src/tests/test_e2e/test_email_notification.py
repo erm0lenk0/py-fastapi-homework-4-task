@@ -1,5 +1,5 @@
 from email_validator import validate_email, EmailNotValidError
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.orm import joinedload
 from validators import url as validate_url
 import pytest
@@ -33,6 +33,20 @@ async def test_registration(e2e_client, reset_db_once_for_e2e, settings, seed_us
     - Verify that an email was sent to the expected recipient.
     - Ensure the email body contains the activation link.
     """
+
+
+    # # Сначала удалить токены
+    # await e2e_db_session.execute(delete(ActivationTokenModel).where(ActivationTokenModel.user_id.in_(
+    #     select(UserModel.id).where(UserModel.email == "test@mate.com")
+    # )))
+    # await e2e_db_session.execute(delete(RefreshTokenModel).where(RefreshTokenModel.user_id.in_(
+    #     select(UserModel.id).where(UserModel.email == "test@mate.com")
+    # )))
+    #
+    # # Потом удалить пользователя
+    # await e2e_db_session.execute(delete(UserModel).where(UserModel.email == "test@mate.com"))
+    # await e2e_db_session.commit()
+
     user_data = {
         "email": "test@mate.com",
         "password": "StrongPassword123!"

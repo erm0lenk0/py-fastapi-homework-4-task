@@ -47,7 +47,12 @@ class Settings(BaseAppSettings):
     SECRET_KEY_REFRESH: str = os.getenv("SECRET_KEY_REFRESH", os.urandom(32))
     JWT_SIGNING_ALGORITHM: str = os.getenv("JWT_SIGNING_ALGORITHM", "HS256")
 
-
+    @property
+    def DATABASE_URL(self) -> str:
+        return (
+            f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+            f"@{self.POSTGRES_HOST}:{self.POSTGRES_DB_PORT}"
+        )
 
 class TestingSettings(BaseAppSettings):
     SECRET_KEY_ACCESS: str = "SECRET_KEY_ACCESS"
@@ -55,6 +60,13 @@ class TestingSettings(BaseAppSettings):
     JWT_SIGNING_ALGORITHM: str = "HS256"
 
     DATABASE_URL: str = "sqlite+aiosqlite:///./test.db"
+
+    EMAIL_HOST: str = "localhost"
+    EMAIL_PORT: int = 1025
+    EMAIL_HOST_USER: str = "testuser@mate.com"
+    EMAIL_HOST_PASSWORD: str = "test_password"
+    EMAIL_USE_TLS: bool = False
+    MAILHOG_API_PORT: int = 8025
 
     def model_post_init(self, __context: dict[str, Any] | None = None) -> None:
         object.__setattr__(self, 'PATH_TO_DB', ":memory:")

@@ -1,7 +1,7 @@
 import random
 
 import pytest
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from sqlalchemy.orm import joinedload
 
 from database import MovieModel
@@ -11,13 +11,18 @@ from database import (
     LanguageModel,
     CountryModel
 )
+from tests.conftest import db_session
 
 
 @pytest.mark.asyncio
-async def test_get_movies_empty_database(client):
+async def test_get_movies_empty_database(client, db_session):
     """
     Test that the `/movies/` endpoint returns a 404 error when the database is empty.
     """
+
+    await db_session.execute(delete(MovieModel))
+    await db_session.commit()
+
     response = await client.get("/api/v1/theater/movies/")
     assert response.status_code == 404, f"Expected 404, got {response.status_code}"
 
@@ -250,7 +255,7 @@ async def test_get_movie_by_id_not_found(client):
     Test that the `/movies/{movie_id}` endpoint returns a 404 error
     when a movie with the given ID does not exist.
     """
-    movie_id = 1
+    movie_id = 9999
 
     response = await client.get(f"/api/v1/theater/movies/{movie_id}/")
     assert response.status_code == 404, f"Expected status code 404, but got {response.status_code}"
